@@ -4,10 +4,9 @@ from fastapi import FastAPI, HTTPException, Response, Depends
 from uuid import UUID
 import requests
 import uvicorn
-import uuid
 import re
 
-from schema.word import BasicVerifier, Word, SessionData
+from schema.word import BasicVerifier, Word, SessionData, StartGame, EndGame, GameDetails
 
 app = FastAPI()
 
@@ -27,9 +26,11 @@ cookie = SessionCookie(
     cookie_params=cookie_params,
 )
 
-@app.get('/start_game')
-async def start_game(response: Response):
-    local_uuid = uuid.uuid4()
+@app.post('/start_game')
+async def start_game(start_game_input: StartGame, response: Response):
+    # session_data = await backend.read(start_game_input.session_id)
+    # local_uuid = session_data.user_uuid
+    local_uuid = start_game_input.session_id
     all_words = requests.get('https://gist.githubusercontent.com/dracos/dd0668f281e685bad51479e5acaadb93/raw/6bfa15d263d6d5b63840a8e5b64e04b382fdb079/valid-wordle-words.txt').text.split('\n')
     del all_words[-1]
 
@@ -44,8 +45,11 @@ async def start_game(response: Response):
         "details": "Game created !"
     }
 
-@app.post('/wordle', dependencies=[Depends(cookie)])
-async def find(input: Word, response: Response, session_data: SessionData = Depends(verifier), session_id: UUID = Depends(cookie)):
+@app.post('/wordle')
+async def find(input: Word, response: Response):
+    session_data = await backend.read(input.session_id)
+    session_id = session_data.user_uuid
+
     pattern = r"^[ynp]{5}$"
     local_words = session_data.words
 
@@ -77,17 +81,18 @@ async def find(input: Word, response: Response, session_data: SessionData = Depe
         "words": local_words
     }
 
-@app.get('/game_details', dependencies=[Depends(cookie)])
-async def game_details(session_data: SessionData = Depends(verifier)):
+@app.post('/game_details')
+async def game_details(game_details_input: GameDetails):
+    session_data = await backend.read(game_details_input.session_id)
     return {
         "uuid": session_data.user_uuid,
         "count": len(session_data.words),
         "words": session_data.words
     }
 
-@app.get('/end_game', dependencies=[Depends(cookie)])
-async def end_game(response: Response, session_id: UUID = Depends(cookie)):
-    await backend.delete(session_id)
+@app.post('/end_game')
+async def end_game(end_game_input: EndGame, response: Response):
+    await backend.delete(end_game_input.session_id)
     cookie.delete_from_response(response)
 
     return {
